@@ -1,3 +1,26 @@
+venv/
+venv-linux/
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Data and models — too large for git, regenerated from scripts
+data/raw/
+data/processed/
+app/models/
+*.pkl
+*.joblib
+*.npy
+
+# Notebooks
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Kafka local data
+kafka-data/
+kafka-logs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
