@@ -60,9 +60,10 @@ SCALER_PATH: Path = BASE_DIR / os.getenv(
 )
 
 # ── Decision Thresholds ────────────────────────────────────────────────────────
-# These are business decisions — adjust based on fraud/customer experience tradeoff
-FRAUD_THRESHOLD: float = float(os.getenv("FRAUD_THRESHOLD", "0.85"))
-ANOMALY_THRESHOLD: float = float(os.getenv("ANOMALY_THRESHOLD", "-0.1"))
+FRAUD_THRESHOLD:    float = float(os.getenv("FRAUD_THRESHOLD",    "0.85"))
+ANOMALY_THRESHOLD:  float = float(os.getenv("ANOMALY_THRESHOLD",  "-0.1"))
+THRESHOLD_REVIEW:   float = float(os.getenv("THRESHOLD_REVIEW",   "0.60"))
+THRESHOLD_BLOCK:    float = float(os.getenv("THRESHOLD_BLOCK",    "0.85"))
 
 # ── AML Thresholds ─────────────────────────────────────────────────────────────
 # Nigeria NFIU Currency Transaction Report threshold: ₦5,000,000
