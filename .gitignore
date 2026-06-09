@@ -28,7 +28,7 @@ app/models/*.json
 !app/models/.gitkeep
 
 #db
-app/db/*.db
+app/audit.db
 
 # Notebooks
 .ipynb_checkpoints/
