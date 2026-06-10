@@ -185,6 +185,6 @@ def investigate(question: str, session_id: str = "analyst-1") -> str:
     agent  = _get_agent()
     result = agent.invoke(
         {"messages": [HumanMessage(content=question)]},
-        config={"configurable": {"thread_id": session_id}, "recursion_limit": 8},
+        config={"configurable": {"thread_id": session_id}, "recursion_limit": 20},
     )
     return result["messages"][-1].content

@@ -132,7 +132,11 @@ def assess_transaction(
     anomaly = anomaly_score(features)
 
     # Anomaly can escalate APPROVE → REVIEW (never de-escalates)
-    if anomaly["is_anomalous"] and decision == "APPROVE":
+    if (
+    anomaly["is_anomalous"]
+    and anomaly["anomaly_label"] == "ANOMALOUS" 
+    and decision == "APPROVE"
+):
         decision   = "REVIEW"
         risk_level = "MEDIUM"
 
