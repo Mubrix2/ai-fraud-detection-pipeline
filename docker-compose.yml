@@ -1,0 +1,111 @@
+# docker-compose.yml
+# Three-service local development stack.
+#
+# Traffic flow:
+#   Browser → frontend:80 (nginx)
+#                ├── serves React static files for /
+#                └── proxies /api/* to api:8000 (internal Docker DNS)
+#
+# The api container is NOT exposed on a host port.
+# All browser-to-API communication goes through nginx.
+# This matches how production works: one public entry point.
+
+services:
+
+  # ── Kafka Broker ──────────────────────────────────────────────────────
+  kafka:
+    # Pin exact version — never use 'latest' in any environment.
+    # 'latest' silently upgrades, breaking serialisation and consumer groups.
+    image: apache/kafka:4.0.0
+    container_name: fraud_kafka
+    ports:
+      # 29092 exposed to host for local tooling (Kafka UI, test scripts)
+      # 9092 is internal only — only the api container needs it
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
+        PLAINTEXT:PLAINTEXT,
+        CONTROLLER:PLAINTEXT,
+        EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: >
+        /opt/kafka/bin/kafka-topics.sh
+        --list
+        --bootstrap-server localhost:9092
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+
+  # ── FastAPI Service ───────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fraud_api
+    # expose makes port 8000 reachable by other Docker services (nginx)
+    # but NOT from the host machine directly.
+    # All external access goes through nginx on port 80.
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TRANSACTIONS_TOPIC: raw-transactions
+      KAFKA_RESULTS_TOPIC: fraud-results
+      KAFKA_CONSUMER_GROUP: fraud-detection-group
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: >
+        python -c
+        "import urllib.request;
+        urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 25s
+    restart: unless-stopped
+
+
+  # ── Frontend + Nginx Gateway ──────────────────────────────────────────
+  # nginx serves React static files AND proxies /api/* to api:8000
+  # This is the ONLY externally exposed service.
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      # No VITE_API_URL here.
+      # nginx proxy handles /api/* routing internally.
+      # VITE_API_URL is only set in Vercel for cross-domain deployment.
+    container_name: fraud_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+
+volumes:
+  kafka_data:
+    driver: local
