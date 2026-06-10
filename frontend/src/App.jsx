@@ -57,10 +57,12 @@ export default function App() {
 
       {/* SHAP Modal */}
       {selected && (
-        <ShapModal
-          transaction={selected}
-          onClose={() => setSelected(null)}
-        />
+        <ErrorBoundary onClose={() => setSelected(null)}>
+          <ShapModal
+            transaction={selected}
+            onClose={() => setSelected(null)}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Header */}
