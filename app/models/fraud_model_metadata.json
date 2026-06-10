@@ -1,0 +1,16 @@
+{
+  "threshold": 0.9,
+  "best_iteration": 493,
+  "fraud_recall": 0.9732,
+  "fraud_precision": 0.7301,
+  "roc_auc": 0.9982,
+  "train_shape": [
+    4419514,
+    14
+  ],
+  "test_shape": [
+    554082,
+    14
+  ],
+  "features": 14
+}

@@ -1,0 +1,7 @@
+{
+  "contamination": 0.002965,
+  "n_estimators": 200,
+  "max_samples": 256,
+  "offset": -0.6924496111890548,
+  "train_samples": 2209757
+}
