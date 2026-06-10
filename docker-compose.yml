@@ -1,0 +1,141 @@
+# docker-compose.yml
+# Orchestrates three services for local development:
+#
+#   kafka    — Apache Kafka 4.x broker (KRaft mode, no Zookeeper)
+#   api      — FastAPI + consumer daemon thread
+#   frontend — React dashboard served by nginx
+#
+# Startup order: kafka (healthy) → api (healthy) → frontend
+#
+# Usage:
+#   docker compose up --build        # build and start all
+#   docker compose up                # start with cached images
+#   docker compose down              # stop all
+#   docker compose down -v           # stop and delete volumes
+#   docker compose logs -f api       # follow API logs
+#   docker compose logs -f kafka     # follow Kafka logs
+
+services:
+
+  # ── Kafka Broker ──────────────────────────────────────────────────────────────
+  kafka:
+    image: apache/kafka:latest
+    container_name: fraud_kafka
+    ports:
+      # 9092: used by other Docker services (api container)
+      # 29092: used by tools on your host machine (Kafka UI, scripts)
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      # KRaft mode — Kafka manages its own metadata, no Zookeeper
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      # Two listener configurations:
+      # PLAINTEXT  — for Docker internal communication (api → kafka)
+      # EXTERNAL   — for connections from the host machine (port 29092)
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
+        PLAINTEXT:PLAINTEXT,
+        CONTROLLER:PLAINTEXT,
+        EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      # Replication factor 1: acceptable for single-broker development
+      # Production: 3 brokers, replication factor 3
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Auto-create topics on first message
+      # Eliminates manual topic creation step inside Docker
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      # Fixed cluster ID — data consistent across restarts
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+
+    volumes:
+      # Named volume persists Kafka data across container restarts
+      # Without this, all topics and messages are lost on container stop
+      - kafka_data:/var/lib/kafka/data
+
+    healthcheck:
+      # Kafka is ready when it can list topics
+      test: >
+        /opt/kafka/bin/kafka-topics.sh
+        --list
+        --bootstrap-server localhost:9092
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+    restart: unless-stopped
+
+
+  # ── FastAPI Service ───────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fraud_api
+    ports:
+      - "8000:8000"
+
+    env_file:
+      - .env
+
+    environment:
+      APP_ENV: production
+
+      # Inside Docker, api reaches kafka via Docker service name — not localhost
+      # This overrides the KAFKA_BOOTSTRAP_SERVERS from .env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TRANSACTIONS_TOPIC: raw-transactions
+      KAFKA_RESULTS_TOPIC: fraud-results
+      KAFKA_CONSUMER_GROUP: fraud-detection-group
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    healthcheck:
+      test: >
+        python -c
+        "import urllib.request;
+        urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 25s
+
+    restart: unless-stopped
+
+
+  # ── React Dashboard ───────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        # The browser makes API requests from the user's machine,
+        # not from inside Docker. So localhost:8000 is correct here.
+        VITE_API_URL: http://localhost:8000
+    container_name: fraud_frontend
+    ports:
+      - "80:80"
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+
+# ── Volumes ────────────────────────────────────────────────────────────────────
+volumes:
+  kafka_data:
+    driver: local

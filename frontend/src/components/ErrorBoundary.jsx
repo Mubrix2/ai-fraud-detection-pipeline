@@ -4,28 +4,39 @@ import { Component } from 'react'
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
-    this.state = { error: null }
+    this.state = { hasError: false, error: null }
   }
 
   static getDerivedStateFromError(error) {
-    return { error }
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error, info) {
+    console.error('Component error:', error, info)
   }
 
   render() {
-    if (this.state.error) {
+    if (this.state.hasError) {
       return (
-        <div className="p-6 bg-red-50 border border-red-200 rounded-lg">
-          <p className="font-semibold text-red-800">
-            Something went wrong rendering this component.
-          </p>
-          <p className="text-xs text-red-600 mt-1 font-mono">
-            {this.state.error.message}
-          </p>
-          <button
-            onClick={() => this.setState({ error: null })}
-            className="mt-3 text-xs text-red-700 underline">
-            Dismiss
-          </button>
+        <div className="fixed inset-0 bg-black/50 flex items-center
+          justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="font-semibold text-red-700 mb-2">
+              Error rendering transaction detail
+            </h3>
+            <p className="text-xs text-gray-500 font-mono mb-4">
+              {this.state.error?.message}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: null })
+                this.props.onClose?.()
+              }}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded
+                text-sm hover:bg-gray-200">
+              Close
+            </button>
+          </div>
         </div>
       )
     }
