@@ -16,7 +16,7 @@ export default defineConfig({
       // /api/* → FastAPI on port 8000
       // Matches nginx: location /api/ { proxy_pass http://api:8000/api/; }
       '/api': {
-        target:      'http://localhost:8001',
+        target:      'http://localhost:8000',
         changeOrigin: true,
       },
       // /health → FastAPI health endpoint
