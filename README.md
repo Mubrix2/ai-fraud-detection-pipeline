@@ -6,8 +6,8 @@ two independent ML models, AML pattern detection, a configurable rules
 engine, and SHAP explainability — producing a compliance-ready decision
 in under 500 milliseconds.
 
-**Live Demo:** [your-dashboard.vercel.app](https://ai-fraud-detection-pipeline.vercel.app)  
-**API Docs:**  [your-api.onrender.com/docs](https://ai-fraud-detection-pipeline.onrender.com/docs)
+**Live Demo:** [ai-fraud-detection-pipeline.vercel.app](https://ai-fraud-detection-pipeline.vercel.app)  
+**API Docs:**  [ai-fraud-detection-pipeline.onrender.com/docs](https://ai-fraud-detection-pipeline.onrender.com/docs)
 
 ---
 
