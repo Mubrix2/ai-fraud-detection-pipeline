@@ -9,11 +9,11 @@
 #   python scripts/train_fraud_model.py
 #   python scripts/train_anomaly_model.py
 
+# Dockerfile
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Build tools needed for confluent-kafka (librdkafka) and XGBoost (gcc)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
@@ -23,20 +23,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install Python dependencies first — Docker layer caching
-# This layer only rebuilds when requirements.txt changes,
-# not when source code changes
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application source
-COPY app/ ./app/ scripts/check_models.py
+COPY app/ ./app/
 
-# Verify models exist — fail fast at build time, not at runtime
-# Gives a clear error message if training was skipped
-RUN python scripts/check_models.py
+# Verify models — heredoc syntax keeps Python readable without parse errors
+# docker-compose.yml context path ensures app/models/ is included
+RUN python3 - <<'PYEOF'
+import sys
+from pathlib import Path
 
+required = [
+    "app/models/fraud_model.pkl",
+    "app/models/anomaly_model.pkl",
+    "app/models/scaler.pkl",
+]
+missing = [m for m in required if not Path(m).exists()]
+if missing:
+    print("ERROR: Missing model files:")
+    for m in missing:
+        print(f"  {m}")
+    print("\nRun these before building:")
+    print("  python scripts/prepare_data.py")
+    print("  python scripts/train_fraud_model.py")
+    print("  python scripts/train_anomaly_model.py")
+    sys.exit(1)
+print(f"All {len(required)} model files verified.")
+PYEOF
 
 EXPOSE 8000
 
