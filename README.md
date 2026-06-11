@@ -349,6 +349,100 @@ the next step for a more realistic model.
 
 ---
 
+## Scaling Roadmap
+
+This system is built to handle a portfolio demo and early-stage
+production traffic (hundreds to low thousands of transactions per day).
+Below is what changes — and why — as transaction volume grows.
+
+### Current Capacity (as built)
+
+| Component | Current Limit | Bottleneck |
+|---|---|---|
+| API | ~50-100 req/s | Single process, single core |
+| Consumer | 1 thread, 3 partitions | Only 1 of 3 partitions used |
+| Results store | 1,000 entries, in-memory | Lost on restart, not shared |
+| Velocity/AML history | In-memory dict | Lost on restart, single process |
+| Audit log | SQLite | File-level locking |
+| Kafka | Single broker | No replication, single point of failure |
+
+---
+
+### Stage 1: 1,000 → 50,000 transactions/day
+
+**Add Redis for shared state**
+Replace in-memory `_results_store`, velocity history, and AML history
+with Redis. This allows multiple API instances to share state and
+survive restarts without losing customer behavioural history.
+
+**Add rate limiting at the gateway**
+nginx `limit_req_zone` prevents a single client from overwhelming
+the API — protects against both abuse and runaway integration bugs.
+
+**Horizontal scale the API**
+Run 2-3 API instances behind a load balancer. Each instance reads/writes
+shared Redis state. Render/Railway support this with a "scale" setting —
+no code changes if Redis is in place.
+
+---
+
+### Stage 2: 50,000 → 1,000,000 transactions/day
+
+**Separate the consumer into its own service**
+Run 3 consumer instances — one per Kafka partition — as independent
+deployments. Each consumes one partition exclusively (Kafka guarantees
+this within a consumer group).
+
+**Move audit log to PostgreSQL**
+SQLite's file locking becomes a bottleneck above ~1,000 writes/second.
+PostgreSQL with connection pooling (PgBouncer) handles this comfortably.
+
+**Add a feature store**
+Velocity and AML history move from Redis dicts to a proper feature
+store (Feast, or Redis with structured TTL keys) — enables feature
+reuse across fraud, AML, and future credit risk models.
+
+**Multi-broker Kafka (3 brokers, replication factor 3)**
+Single broker = single point of failure. 3 brokers with RF=3 means
+the system survives any single broker going down with zero data loss.
+
+---
+
+### Stage 3: 1,000,000+ transactions/day
+
+**Dead Letter Queue (DLQ)**
+Messages that fail processing 3 times go to `fraud-dlq` instead of
+being dropped or retried forever. A separate process reviews DLQ
+messages — usually malformed payloads or model timeout edge cases.
+
+**Idempotency layer**
+At this volume, network retries WILL cause duplicate submissions.
+Redis-based idempotency keys (hash of transaction_id) prevent
+double-scoring the same transaction.
+
+**Observability stack**
+Prometheus + Grafana for metrics (request rate, latency percentiles,
+model inference time, Kafka consumer lag). Without this, you are
+blind to degradation until customers complain.
+
+**Model serving separation**
+ML inference moves to a dedicated service (or ONNX Runtime for
+sub-10ms inference) so model updates don't require redeploying the
+whole API.
+
+---
+
+### What Does NOT Change
+
+The core detection pipeline — feature engineering, the 14 features,
+the 9-step assess_transaction() flow, the SHAP explainability, the
+AML typologies, the 3-tier decision logic — remains identical at
+every scale. Scaling changes *infrastructure*, not *fraud logic*.
+This separation (business logic vs infrastructure) is why the
+architecture can grow without a rewrite.
+
+---
+
 ## Author
 
 **Mubarak Olalekan Oladipo**  
