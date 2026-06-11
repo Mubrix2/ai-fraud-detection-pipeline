@@ -11,6 +11,12 @@ in under 500 milliseconds.
 
 ---
 
+## Demo
+
+![Demo](demo.gif)
+
+---
+
 ## The Pipeline
 
 ```
