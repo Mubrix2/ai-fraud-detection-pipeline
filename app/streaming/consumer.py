@@ -28,6 +28,7 @@ import logging
 import threading
 from datetime import datetime, timezone
 from typing import Optional
+import logging as _logging
 
 from confluent_kafka import Consumer, KafkaError, Producer
 
@@ -39,6 +40,13 @@ from app.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Route librdkafka's internal logs through Python logging instead of
+# raw stderr writes. Setting level to ERROR suppresses the repeated
+# "Connection refused" lines that appear when Kafka is unreachable
+# (e.g. on Render, where no broker exists — see README Deployment section).
+_kafka_internal_logger = _logging.getLogger("confluent_kafka")
+_kafka_internal_logger.setLevel(_logging.ERROR)
 
 # ── Thread-safe results store ──────────────────────────────────────────────────
 _results_store: dict[str, dict] = {}
@@ -165,11 +173,26 @@ def _run_consumer() -> None:
     results_producer = _create_results_producer()
 
     try:
-        consumer.subscribe([KAFKA_TRANSACTIONS_TOPIC])
-        _stats["started_at"] = datetime.now(timezone.utc).isoformat()
-        logger.info("✅ Consumer subscribed — polling for messages")
-
         while not _stop_event.is_set():
+            # Backoff loop while Kafka is unreachable
+            if not connected:
+                if _kafka_available():
+                    consumer.subscribe([KAFKA_TRANSACTIONS_TOPIC])
+                    connected = True
+                    _stats["started_at"] = datetime.now(timezone.utc).isoformat()
+                    logger.info("✅ Consumer subscribed — polling for messages")
+                else:
+                    if not warned_once:
+                        logger.warning(
+                            "⚠️  Kafka unreachable — consumer will retry "
+                            "every 60s. Synchronous scoring (/submit) "
+                            "is unaffected."
+                        )
+                        warned_once = True
+                    if _stop_event.wait(60):
+                        break
+                    continue
+
             msg = consumer.poll(timeout=1.0)
 
             if msg is None:
@@ -222,3 +245,18 @@ def stop_consumer() -> None:
         _consumer_thread.join(timeout=10)
     _consumer_thread = None
     logger.info("Consumer thread stopped")
+
+
+def _kafka_available(timeout: float = 2.0) -> bool:
+    """
+    Quick check whether the Kafka broker is reachable.
+    Used to avoid a tight reconnect loop when no broker exists
+    (e.g. Render cloud deployment with no Kafka service).
+    """
+    from confluent_kafka.admin import AdminClient
+    try:
+        admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
+        admin.list_topics(timeout=timeout)
+        return True
+    except Exception:
+        return False

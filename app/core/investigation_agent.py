@@ -61,13 +61,28 @@ def get_transaction_details(transaction_id: str) -> str:
 
 
 @tool
-def list_flagged_transactions(limit: int = 10) -> str:
-    """List recently flagged (REVIEW or BLOCK) transactions."""
+def list_flagged_transactions(limit: str = "10") -> str:
+    """
+    List recently flagged (REVIEW or BLOCK) transactions.
+
+    Args:
+        limit: Maximum number of transactions to return (1-20).
+               Accepts a number as a string, e.g. "10".
+    """
+    # Groq's tool-calling sometimes sends numbers as strings.
+    # Coerce defensively — int() handles both "5" and 5.
+    try:
+        limit_int = int(limit)
+    except (ValueError, TypeError):
+        limit_int = 10
+
+    limit_int = max(1, min(limit_int, 20))  # clamp to 1-20
+
     from app.streaming.consumer import get_all_results
     flagged = [
         r for r in get_all_results()
         if r.get("decision") in ("REVIEW", "BLOCK")
-    ][:limit]
+    ][:limit_int]
 
     if not flagged:
         return "No flagged transactions in the current session."
