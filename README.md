@@ -324,6 +324,16 @@ and layering, with NFIU filing obligation flagged within 24 hours.
 
 ---
 
+## Destination Velocity
+
+Destination velocity tracking now runs alongside per-customer velocity.
+The system detects both:
+- **Per-customer patterns:** one compromised account sending many transactions rapidly
+- **Cross-customer (network) patterns:** many different customers all hitting
+  the same destination in a short window (card testing / distributed micro-fraud)
+
+---
+
 ## Engineering Decisions
 
 **Why consumer as a thread?**  
@@ -365,10 +375,30 @@ Below is what changes — and why — as transaction volume grows.
 | Velocity/AML history | In-memory dict | Lost on restart, single process |
 | Audit log | SQLite | File-level locking |
 | Kafka | Single broker | No replication, single point of failure |
+| Destination velocity | Detects one compromised account sending many transactions rapidly|
 
 ---
 
-### Stage 1: 1,000 → 50,000 transactions/day
+## Stage 1:  Graph-based merchant clustering
+
+At high volume, destination velocity catches the immediate signal but
+misses slower-moving fraud rings where the aggregation point rotates
+across many destinations. The production solution is a graph layer:
+
+- Nodes: customer accounts, destination accounts, IP addresses, devices
+- Edges: transactions (with amount, timestamp, type)
+- Algorithm: community detection (Louvain / spectral clustering)
+- Signal: tightly clustered subgraphs with many first-time connections
+  = fraud ring signature
+
+Requires: Neo4j or Apache GraphX, batch job running every 15 minutes,
+feeding high-risk subgraph members back into the rules engine as a
+blocklist. Real-time graph analytics is a separate streaming concern
+(Apache Flink + graph partitioning).
+
+---
+
+### Stage 2: 1,000 → 50,000 transactions/day
 
 **Add Redis for shared state**
 Replace in-memory `_results_store`, velocity history, and AML history
@@ -386,7 +416,7 @@ no code changes if Redis is in place.
 
 ---
 
-### Stage 2: 50,000 → 1,000,000 transactions/day
+### Stage 3: 50,000 → 1,000,000 transactions/day
 
 **Separate the consumer into its own service**
 Run 3 consumer instances — one per Kafka partition — as independent
@@ -408,7 +438,7 @@ the system survives any single broker going down with zero data loss.
 
 ---
 
-### Stage 3: 1,000,000+ transactions/day
+### Stage 4: 1,000,000+ transactions/day
 
 **Dead Letter Queue (DLQ)**
 Messages that fail processing 3 times go to `fraud-dlq` instead of
