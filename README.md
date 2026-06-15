@@ -28,7 +28,9 @@ Kafka Stream ─── raw-transactions topic (3 partitions)
           ▼
 Feature Engineering ─── 14 features from transaction fields
           │
-          ├── Velocity Engine (per-customer sliding window behavioural context)
+          ├── Velocity Layer (two parallel engines):
+                      ├── Sender velocity   → "Is THIS customer unusually active?"
+                      └── Destination velocity → "Are MANY customers hitting THIS destination?"
           │
           ▼
 Dual ML Scoring
