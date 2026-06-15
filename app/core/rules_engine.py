@@ -24,6 +24,7 @@ def apply_rules(
     features: dict,
     current_decision: str,
     velocity: dict,
+    dest_velocity: dict,
     transaction_data: dict,
 ) -> dict:
     """
@@ -79,6 +80,31 @@ def apply_rules(
     hour = features.get("hour_of_day", 12)
     if hour < 5 and amount >= 500_000:
         escalate("REVIEW", "NIGHT_LARGE: Large transaction between midnight and 5am")
+
+    # ── Rule 6: Destination velocity risk ─────────────────────────
+     # ── New: destination velocity rules ───────────────────────────────
+    # MICRO_FRAUD_DESTINATION: multiple different senders hitting the
+    # same destination rapidly — the card testing / distributed
+    # micro-fraud pattern. Per-customer velocity cannot see this signal.
+    unique_10min = dest_velocity.get("dest_unique_senders_10min", 0)
+    unique_1hour = dest_velocity.get("dest_unique_senders_1hour", 0)
+    avg_10min    = dest_velocity.get("dest_avg_amount_10min", 0)
+
+    if unique_10min >= 5:
+        escalate(
+            "REVIEW",
+            f"MICRO_FRAUD_DESTINATION: {unique_10min} different senders "
+            f"to same destination in 10 minutes "
+            f"(avg ₦{avg_10min:,.0f} per transaction)"
+        )
+
+    if unique_1hour >= 20:
+        escalate(
+            "BLOCK",
+            f"CARD_TESTING_PATTERN: {unique_1hour} unique senders "
+            f"to same destination in 1 hour — "
+            f"total inflow ₦{dest_velocity.get('dest_total_inflow_1hour', 0):,.0f}"
+        )
 
     return {
         "final_decision":  decision,

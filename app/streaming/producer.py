@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 
 _producer: Optional[Producer] = None
 
+import logging as _logging
+
+# Route librdkafka's internal logs through Python logging instead of
+# raw stderr writes. Setting level to ERROR suppresses the repeated
+# "Connection refused" lines that appear when Kafka is unreachable
+# (e.g. on Render, where no broker exists — see README Deployment section).
+_kafka_internal_logger = _logging.getLogger("confluent_kafka")
+_kafka_internal_logger.setLevel(_logging.ERROR)
+
 
 def initialise_producer() -> bool:
     global _producer
@@ -34,6 +43,7 @@ def initialise_producer() -> bool:
             "acks":              "all",
             "retries":           5,
             "linger.ms":         5,
+            "logger":            _kafka_internal_logger,
         })
         logger.info(
             f"Kafka producer ready | broker={KAFKA_BOOTSTRAP_SERVERS}"

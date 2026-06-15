@@ -33,6 +33,7 @@ from app.core.fraud_scorer import score_transaction as fraud_score
 from app.core.rules_engine import apply_rules
 from app.core.velocity_engine import get_velocity_features, record_transaction
 from app.core import aml_detector
+from app.core.destination_velocity import get_destination_features, record_destination
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +108,16 @@ def assess_transaction(
     record_transaction(name_orig, amount)
     velocity = get_velocity_features(name_orig, amount)
 
-    # ── 4. AML detection ───────────────────────────────────────────
+    # ── 4. Destination velocity ──────────────────────────────────────────
+    # Record BEFORE scoring so future transactions see this one in history
+    record_destination(name_dest, amount, name_orig)
+    dest_velocity = get_destination_features(name_dest)
+
+    # ── 5. AML detection (unchanged) ─────────────────────────────────────
     aml_detector.record_for_aml(name_orig, amount, tx_type)
     aml = aml_detector.detect(name_orig, amount, tx_type)
 
-    # ── 5. ML scoring (with circuit breaker protection) ────────────
+    # ── 6. ML scoring (with circuit breaker protection) ────────────
     if fraud_breaker.is_open:
         logger.warning("Circuit breaker OPEN — using rule fallback")
         fraud_result = rule_fallback(features, amount)
@@ -128,7 +134,7 @@ def assess_transaction(
     decision   = fraud_result["decision"]
     risk_level = fraud_result["risk_level"]
 
-    # ── 6. Anomaly detection ───────────────────────────────────────
+    # ── 7. Anomaly detection ───────────────────────────────────────
     anomaly = anomaly_score(features)
 
     # Anomaly can escalate APPROVE → REVIEW (never de-escalates)
@@ -140,9 +146,9 @@ def assess_transaction(
         decision   = "REVIEW"
         risk_level = "MEDIUM"
 
-    # ── 7. Rules engine ────────────────────────────────────────────
+    # ── 8. Rules engine ────────────────────────────────────────────
     # AML flags can also force REVIEW
-    rules = apply_rules(features, decision, velocity, transaction_data)
+    rules = apply_rules(features, decision, velocity, dest_velocity, transaction_data)
     decision = rules["final_decision"]
 
     # AML flag escalation
@@ -152,10 +158,10 @@ def assess_transaction(
 
     is_flagged = decision in ("REVIEW", "BLOCK")
 
-    # ── 8. SHAP explanation ────────────────────────────────────────
+    # ── 9. SHAP explanation ────────────────────────────────────────
     explanation = explain_transaction(features)
 
-    # ── 9. Build assessment and audit ─────────────────────────────
+    # ── 10. Build assessment and audit ─────────────────────────────
     elapsed = (time.perf_counter() - start) * 1000
 
     assessment = _build_assessment(
@@ -171,6 +177,7 @@ def assess_transaction(
         rules             = rules,
         explanation       = explanation,
         processing_ms     = elapsed,
+        dest_velocity     = dest_velocity,
     )
 
     log_decision(assessment)
@@ -192,7 +199,7 @@ def assess_transaction(
 def _build_assessment(
     transaction_id, transaction_data, fraud_probability,
     decision, risk_level, is_flagged, anomaly_label,
-    velocity, aml, rules, explanation, processing_ms, note=None,
+    velocity, aml, rules, explanation, processing_ms, dest_velocity, note=None,
 ) -> dict:
     return {
         "transaction_id":    transaction_id,
@@ -219,4 +226,5 @@ def _build_assessment(
         "scored_at":         datetime.now(timezone.utc).isoformat(),
         "processing_ms":     round(processing_ms, 2),
         **({"note": note} if note else {}),
+        "dest_velocity": dest_velocity,
     }
