@@ -177,7 +177,6 @@ def assess_transaction(
         rules             = rules,
         explanation       = explanation,
         processing_ms     = elapsed,
-        dest_velocity     = dest_velocity,
     )
 
     log_decision(assessment)
