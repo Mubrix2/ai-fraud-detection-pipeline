@@ -78,6 +78,7 @@ def assess_transaction(
             is_flagged       = False,
             anomaly_label    = "N/A",
             velocity         = {},
+            dest_velocity    = {},
             aml              = {"aml_flags": [], "aml_flag_count": 0,
                                  "requires_sar": False, "requires_ctr": False,
                                  "aml_score": 0, "aml_note": "Type outside model scope."},
@@ -173,6 +174,7 @@ def assess_transaction(
         is_flagged        = is_flagged,
         anomaly_label     = anomaly["anomaly_label"],
         velocity          = velocity,
+        dest_velocity     = dest_velocity,
         aml               = aml,
         rules             = rules,
         explanation       = explanation,
@@ -198,7 +200,7 @@ def assess_transaction(
 def _build_assessment(
     transaction_id, transaction_data, fraud_probability,
     decision, risk_level, is_flagged, anomaly_label,
-    velocity, aml, rules, explanation, processing_ms, dest_velocity, note=None,
+    velocity, dest_velocity, aml, rules, explanation, processing_ms, note=None,
 ) -> dict:
     return {
         "transaction_id":    transaction_id,
@@ -219,6 +221,7 @@ def _build_assessment(
         "aml_note":          aml.get("aml_note", ""),
         "triggered_rules":   rules.get("triggered_rules", []),
         "velocity":          velocity,
+        "dest_velocity":     dest_velocity,
         "top_reasons":       explanation.get("top_reasons", []),
         "explanation_text":  explanation.get("explanation_text", ""),
         "explanation_available": explanation.get("explanation_available", False),
