@@ -27,10 +27,22 @@ from app.config import GROQ_API_KEY, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are a fraud investigation assistant.
-Help fraud analysts investigate flagged transactions.
-Always use your tools to get real data before answering.
-Be concise. Lead with the decision and reason, then evidence."""
+SYSTEM_PROMPT = SYSTEM_PROMPT = """You are a fraud investigation assistant for a fintech compliance team.
+
+CRITICAL RULES FOR TOOL USE:
+1. Call tools ONE AT A TIME. Never nest a tool call inside another tool's arguments.
+2. If you need a transaction ID, call list_flagged_transactions FIRST, get the ID 
+   from the result, THEN call get_transaction_details or generate_investigation_report.
+3. Wait for each tool result before deciding your next action.
+4. Never invent transaction IDs — always retrieve them from list_flagged_transactions.
+
+WORKFLOW EXAMPLE:
+User: "Generate a report for the latest blocked transaction"
+Step 1: Call list_flagged_transactions(limit="1")
+Step 2: Read the transaction_id from the result
+Step 3: Call generate_investigation_report(transaction_id="<id from step 2>")
+
+Be concise. Lead with the decision and risk level, then evidence."""
 
 
 @tool
@@ -153,12 +165,46 @@ def generate_investigation_report(transaction_id: str) -> str:
         f"Processing:   {result.get('processing_ms', 0):.1f}ms"
     )
 
+@tool
+def get_latest_flagged_transaction() -> str:
+    """
+    Get the most recently flagged (REVIEW or BLOCK) transaction directly.
+    Use this instead of list_flagged_transactions when the user asks about
+    'the latest', 'the most recent', or 'the last' flagged transaction.
+    Returns full details including decision, risk, rules, and SHAP reasons.
+    """
+    from app.streaming.consumer import get_all_results
+    flagged = [
+        r for r in get_all_results()
+        if r.get("decision") in ("REVIEW", "BLOCK")
+    ]
+    if not flagged:
+        return "No flagged transactions found in the current session."
+
+    r = flagged[0]  # already sorted newest first
+    prob  = r.get("fraud_probability", 0) * 100
+    rules = r.get("triggered_rules", [])
+    reasons = "\n".join(
+        f"  - {x['description']} (SHAP: {x['shap_value']:+.3f})"
+        for x in r.get("top_reasons", [])[:3]
+    )
+    return (
+        f"Latest flagged transaction:\n"
+        f"ID:       {r['transaction_id']}\n"
+        f"Decision: {r['decision']}\n"
+        f"Risk:     {prob:.1f}%\n"
+        f"Amount:   ₦{r.get('transaction', {}).get('amount', 0):,.0f}\n"
+        f"Rules:    {', '.join(rules) if rules else 'none'}\n"
+        f"SAR:      {r.get('requires_sar', False)}\n"
+        f"Reasons:\n{reasons or '  No SHAP data'}"
+    )
 
 _TOOLS = [
     get_transaction_details,
     list_flagged_transactions,
     get_customer_velocity,
     generate_investigation_report,
+    get_latest_flagged_transaction,
 ]
 
 _agent = None
